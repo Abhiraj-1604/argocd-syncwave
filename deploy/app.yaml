@@ -1,0 +1,162 @@
+# ---------------------------
+# Database Deployment (Wave 0)
+# ---------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: database
+  labels:
+    app: database
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: database
+  template:
+    metadata:
+      labels:
+        app: database
+    spec:
+      containers:
+      - name: database
+        image: postgres:13
+        env:
+        - name: POSTGRES_PASSWORD
+          value: "example"
+        ports:
+        - containerPort: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: database
+  labels:
+    app: database
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: database
+---
+# -----------------------------------------------
+# PreSync Hook: Wait for the Database to be Ready
+# -----------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wait-for-database
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      containers:
+      - name: wait-for-database
+        image: busybox
+        command: ["sh", "-c", "until nc -z database 5432; do echo waiting for database; sleep 5; done"]
+      restartPolicy: Never
+---
+# ---------------------------
+# Backend Deployment (Wave 1)
+# ---------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: backend
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: hashicorp/http-echo
+        args:
+          - "-text=Backend is up"
+        ports:
+        - containerPort: 5678
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: backend
+spec:
+  ports:
+  - port: 80
+    targetPort: 5678
+  selector:
+    app: backend
+---
+# -----------------------------------------------
+# PreSync Hook: Wait for the Backend to be Ready
+# -----------------------------------------------
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wait-for-backend
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  template:
+    spec:
+      containers:
+      - name: wait-for-backend
+        image: busybox
+        command: ["sh", "-c", "until nc -z backend 80; do echo waiting for backend; sleep 5; done"]
+      restartPolicy: Never
+---
+# ---------------------------
+# Frontend Deployment (Wave 2)
+# ---------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: nginx:stable
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  labels:
+    app: frontend
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: frontend
